@@ -304,11 +304,10 @@ function runHostDiscovery(
   win: BrowserWindow, scanId: string, target: string
 ): Promise<string[]> {
   return new Promise((resolve) => {
-    const binPath = getBinaryPath('naabu')
-    const outputPath = tempFile('hostdiscovery', 'json')
-    const args = ['-host', target.trim(), '-host-discovery', '-json', '-silent', '-o', outputPath]
+    const binPath = getBinaryPath('nmap')
+    const args = ['-sn', '-n', target.trim(), '-T5']
 
-    safeSend(win, 'scan:stdout', { scanId, line: `[*] 主机发现: naabu -host-discovery ${target.trim()}` })
+    safeSend(win, 'scan:stdout', { scanId, line: `[*] 主机发现: nmap -sn ${target.trim()}` })
 
     const child = spawn(binPath, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
     activeProcesses.set(scanId, child)
@@ -316,19 +315,19 @@ function runHostDiscovery(
     const seen = new Set<string>()
 
     child.stdout!.on('data', (chunk: Buffer) => {
-      const lines = chunk.toString().split(/\r?\n/).filter(Boolean)
+      const text = chunk.toString()
+      const lines = text.split(/\r?\n/).filter(Boolean)
       for (const line of lines) {
-        safeSend(win, 'scan:stdout', { scanId, line: `[discover] ${line}` })
-        // Parse JSON output for alive hosts
-        try {
-          const obj = JSON.parse(line)
-          const ip = obj.host || obj.ip || ''
-          if (ip && !seen.has(ip)) {
-            seen.add(ip)
-            aliveHosts.push(ip)
-            safeSend(win, 'scan:stdout', { scanId, line: `[+] 存活: ${ip}` })
-          }
-        } catch { /* not JSON */ }
+        // Filter out garbled encoding lines (nmap 7.80 Windows locale bug)
+        if (line.includes('?') && line.length > 80) continue
+        safeSend(win, 'scan:stdout', { scanId, line })
+        // Parse: "Nmap scan report for 192.168.1.1"
+        const ipMatch = line.match(/Nmap scan report for (\d+\.\d+\.\d+\.\d+)/)
+        if (ipMatch && !seen.has(ipMatch[1])) {
+          seen.add(ipMatch[1])
+          aliveHosts.push(ipMatch[1])
+          safeSend(win, 'scan:stdout', { scanId, line: `[+] 存活: ${ipMatch[1]}` })
+        }
       }
     })
 
@@ -339,24 +338,6 @@ function runHostDiscovery(
 
     child.on('close', () => {
       activeProcesses.delete(scanId)
-      // Also parse output file for complete results
-      try {
-        if (fs.existsSync(outputPath)) {
-          const raw = fs.readFileSync(outputPath, 'utf-8')
-          const lines = raw.split(/\r?\n/).filter(Boolean)
-          for (const line of lines) {
-            try {
-              const obj = JSON.parse(line)
-              const ip = obj.host || obj.ip || ''
-              if (ip && !seen.has(ip)) {
-                seen.add(ip)
-                aliveHosts.push(ip)
-              }
-            } catch { /* */ }
-          }
-          try { fs.unlinkSync(outputPath) } catch { /* */ }
-        }
-      } catch { /* */ }
       resolve(aliveHosts)
     })
     child.on('error', () => resolve(aliveHosts))
@@ -464,7 +445,7 @@ function runNmapPhase(
     const allPorts = Array.from(portSet).sort((a, b) => a - b).join(',')
     const args = [
       '-iL', targetPath, '-p', allPorts,
-      '-sV', '-sC',
+      '-n', '-sV', '-sC',
       '--script', 'vuln,auth,brute,exploit,http-vuln-*,smb-vuln-*,rdp-vuln-*',
       '-oX', outputPath, '--open', '-T4',
       '--script-args', 'brute.firstonly=1,unpwdb.timelimit=30m'
@@ -486,6 +467,8 @@ function runNmapPhase(
       const text = chunk.toString()
       const lines = text.split(/\r?\n/).filter(Boolean)
       for (const line of lines) {
+        // Filter garbled encoding lines (nmap 7.80 locale bug)
+        if (line.includes('?') && line.length > 60) continue
         if (line.trim()) safeSend(win, 'scan:stdout', { scanId, line })
         // Real-time parse: track current IP
         const ipMatch = line.match(/Nmap scan report for (\d+\.\d+\.\d+\.\d+)/)
