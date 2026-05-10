@@ -322,6 +322,11 @@ function runHostDiscovery(
         if (ipMatch) {
           aliveHosts.push(ipMatch[1])
           safeSend(win, 'scan:stdout', { scanId, line: `[+] 存活: ${ipMatch[1]}` })
+          safeSend(win, 'scan:result', {
+            scanId,
+            result: { IP: ipMatch[1], Port: '', Service: 'alive', FingerPrint: '', URL: '' },
+            tool: 'nmap'
+          })
         }
       }
     })
@@ -374,6 +379,18 @@ function runNaabuPhase(win: BrowserWindow, scanId: string, target: string, portR
       naabuLineCount += lines.length
       for (const line of lines) {
         safeSend(win, 'scan:stdout', { scanId, line: `[naabu] ${line}` })
+        // Parse JSON lines for real-time host display
+        try {
+          const obj = JSON.parse(line)
+          const host = obj.host || obj.ip
+          if (host && obj.port) {
+            safeSend(win, 'scan:result', {
+              scanId,
+              result: { IP: host, Port: String(obj.port), Service: '', FingerPrint: '', URL: '' },
+              tool: 'nmap'
+            })
+          }
+        } catch { /* not JSON */ }
       }
     })
 
@@ -412,28 +429,24 @@ function runNmapPhase(
     if (cancelledScans.has(scanId)) { resolve({ hosts: [], hostCount: 0 }); return }
     if (naabuResults.length === 0) { resolve({ hosts: [], hostCount: 0 }); return }
 
-    // Build per-host port lists for nmap
-    const hostPorts = new Map<string, number[]>()
+    // Collect unique host IPs and all unique ports
+    const hostSet = new Set<string>()
+    const portSet = new Set<number>()
     for (const r of naabuResults) {
-      if (!hostPorts.has(r.host)) hostPorts.set(r.host, [])
-      hostPorts.get(r.host)!.push(r.port)
+      hostSet.add(r.host)
+      portSet.add(r.port)
     }
 
-    // Limit to 100 ports per host to keep nmap fast
-    const targetList: string[] = []
-    for (const [host, ports] of hostPorts) {
-      const portList = ports.slice(0, 100).sort((a, b) => a - b).join(',')
-      targetList.push(`${host}:${portList}`)
-    }
-
-    // Write targets to temp file for nmap -iL
+    // Write only IPs to target file (nmap -iL does NOT support host:port format)
     const targetPath = tempFile('nmap_targets', 'txt')
-    fs.writeFileSync(targetPath, targetList.join('\n'), 'utf-8')
+    fs.writeFileSync(targetPath, Array.from(hostSet).join('\n'), 'utf-8')
 
     const binPath = getBinaryPath('nmap')
     const outputPath = tempFile('nmap', 'xml')
+    const allPorts = Array.from(portSet).sort((a, b) => a - b).join(',')
     const args = [
-      '-iL', targetPath, '-sV', '-sC',
+      '-iL', targetPath, '-p', allPorts,
+      '-sV', '-sC',
       '--script', 'vuln,auth,brute,exploit,http-vuln-*,smb-vuln-*,rdp-vuln-*',
       '-oX', outputPath, '--open', '-T4',
       '--script-args', 'brute.firstonly=1,unpwdb.timelimit=30m'
@@ -441,7 +454,7 @@ function runNmapPhase(
 
     safeSend(win, 'scan:stdout', {
       scanId,
-      line: `[*] Nmap 正在检测 ${targetList.length} 个目标的服务版本...`
+      line: `[*] Nmap 正在检测 ${hostSet.size} 个主机的 ${portSet.size} 个端口...`
     })
 
     const child = spawnTool(win, scanId, 'Nmap', binPath, args, 'nmap')
@@ -450,11 +463,27 @@ function runNmapPhase(
     scanPhases.set(scanId, 'nmap')
     activeProcesses.set(scanId, child)
 
+    let currentNmapIp = ''
     child.stdout!.on('data', (chunk: Buffer) => {
       const text = chunk.toString()
       const lines = text.split(/\r?\n/).filter(Boolean)
       for (const line of lines) {
         if (line.trim()) safeSend(win, 'scan:stdout', { scanId, line })
+        // Real-time parse: track current IP
+        const ipMatch = line.match(/Nmap scan report for (\d+\.\d+\.\d+\.\d+)/)
+        if (ipMatch) currentNmapIp = ipMatch[1]
+        // Real-time parse: open port with service info
+        const portMatch = line.match(/^(\d+)\/(tcp|udp)\s+open\s+(\S+)\s*(.*)/)
+        if (portMatch && currentNmapIp) {
+          const port = portMatch[1]
+          const svc = portMatch[3]
+          const extra = portMatch[4] || ''
+          safeSend(win, 'scan:result', {
+            scanId,
+            result: { IP: currentNmapIp, Port: port, Service: svc, FingerPrint: extra, URL: '' },
+            tool: 'nmap'
+          })
+        }
       }
     })
 
@@ -526,6 +555,26 @@ function runHttpxPhase(
       const lines = text.split(/\r?\n/).filter(Boolean)
       for (const line of lines) {
         if (line.trim()) safeSend(win, 'scan:stdout', { scanId, line })
+        // Real-time parse: httpx JSON output
+        try {
+          const obj = JSON.parse(line)
+          if (obj.url || obj.input) {
+            const url = obj.url || obj.input || ''
+            const techs = obj.tech || obj.technologies || []
+            safeSend(win, 'scan:result', {
+              scanId,
+              result: { URL: url, IP: '', Port: '', Service: obj.webserver || '', FingerPrint: techs.join(', '), Keyword: obj.title || '' },
+              tool: 'nmap'
+            })
+            // Also send web fingerprint results immediately
+            for (const tech of techs) {
+              insertWebFingerprint({
+                scan_id: scanId, url, tech_name: tech,
+                category: '', version: '', confidence: 80
+              })
+            }
+          }
+        } catch { /* not JSON */ }
       }
     })
 

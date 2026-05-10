@@ -124,7 +124,19 @@ export const useScanStore = create<ScanState>((set, get) => ({
     const sessions = new Map(get().sessions)
     const session = sessions.get(scanId)
     if (!session) return
-    sessions.set(scanId, { ...session, hosts: [...session.hosts, host] })
+    const existingIdx = session.hosts.findIndex(h => h.ip === host.ip && h.port === host.port)
+    if (existingIdx >= 0) {
+      // Update with richer data if new entry has more info
+      const existing = session.hosts[existingIdx]
+      const updated = { ...existing }
+      if (host.service && !existing.service) updated.service = host.service
+      if (host.fingerprint && !existing.fingerprint) updated.fingerprint = host.fingerprint
+      const newHosts = [...session.hosts]
+      newHosts[existingIdx] = updated
+      sessions.set(scanId, { ...session, hosts: newHosts })
+    } else {
+      sessions.set(scanId, { ...session, hosts: [...session.hosts, host] })
+    }
     set({ sessions })
   },
 
