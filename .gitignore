@@ -1,0 +1,25 @@
+node_modules/
+out/
+dist/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+
+# Binaries are downloaded separately
+bin/
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build output
+release/
+*.nsis

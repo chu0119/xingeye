@@ -1,0 +1,30 @@
+appId: com.cyberscan.app
+productName: XingEye
+copyright: Copyright © 2026 XingEye
+
+directories:
+  output: dist
+
+files:
+  - out/**/*
+  - "!out/renderer/**/*"
+
+extraResources:
+  - from: "resources/win"
+    to: "binaries"
+    filter:
+      - "**/*"
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch: x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 星川之眼

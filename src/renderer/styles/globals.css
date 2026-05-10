@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+/* Cyberpunk theme variables */
+:root {
+  --cyber-bg: #0a0a0f;
+  --cyber-bg-card: #111827;
+  --cyber-border: #1e293b;
+  --neon-cyan: #00f0ff;
+  --neon-purple: #bf00ff;
+  --neon-pink: #ff0066;
+  --neon-green: #00ff88;
+  --neon-yellow: #ffd000;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+}
+
+body {
+  background: var(--cyber-bg);
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Microsoft YaHei', 'PingFang SC', monospace;
+  font-size: 15px;
+}
+
+/* Electron frameless window drag regions */
+.titlebar-drag { -webkit-app-region: drag; }
+.titlebar-no-drag { -webkit-app-region: no-drag; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--cyber-bg); }
+::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--neon-cyan); }
+
+/* Scanline overlay effect */
+.scanline-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 240, 255, 0.015) 2px,
+    rgba(0, 240, 255, 0.015) 4px
+  );
+  z-index: 9999;
+}
+
+/* Neon glow effect */
+.neon-glow {
+  box-shadow: 0 0 5px var(--neon-cyan), 0 0 20px rgba(0, 240, 255, 0.1);
+}
+
+.neon-glow-purple {
+  box-shadow: 0 0 5px var(--neon-purple), 0 0 20px rgba(191, 0, 255, 0.1);
+}
+
+.neon-glow-pink {
+  box-shadow: 0 0 5px var(--neon-pink), 0 0 20px rgba(255, 0, 102, 0.1);
+}
+
+/* Neon text glow */
+.neon-text {
+  text-shadow: 0 0 7px var(--neon-cyan), 0 0 20px rgba(0, 240, 255, 0.3);
+}
+
+/* Glitch animation */
+@keyframes glitch {
+  0% { transform: translate(0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(-2px, -2px); }
+  60% { transform: translate(2px, 2px); }
+  80% { transform: translate(2px, -2px); }
+  100% { transform: translate(0); }
+}
+
+.glitch-text:hover {
+  animation: glitch 0.3s ease-in-out;
+}
+
+/* Cyberpunk card */
+.cyber-card {
+  background: var(--cyber-bg-card);
+  border: 1px solid var(--cyber-border);
+  border-radius: 4px;
+  position: relative;
+}
+
+.cyber-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
+}
+
+/* Terminal style */
+.terminal {
+  background: #050510;
+  border: 1px solid var(--cyber-border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 12px;
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+.terminal-line {
+  color: var(--neon-green);
+}
+
+/* Pulse animation for scanning status */
+@keyframes cyber-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.cyber-pulse {
+  animation: cyber-pulse 1.5s ease-in-out infinite;
+}
+
+/* Neon border animation */
+@keyframes neon-border-flow {
+  0% { border-color: var(--neon-cyan); }
+  33% { border-color: var(--neon-purple); }
+  66% { border-color: var(--neon-pink); }
+  100% { border-color: var(--neon-cyan); }
+}
+
+.neon-border-animate {
+  animation: neon-border-flow 4s linear infinite;
+}
+
+/* Severity colors */
+.severity-critical { color: #ff0044; text-shadow: 0 0 10px rgba(255, 0, 68, 0.5); }
+.severity-high { color: #ff6600; text-shadow: 0 0 10px rgba(255, 102, 0, 0.5); }
+.severity-medium { color: #ffd000; text-shadow: 0 0 10px rgba(255, 208, 0, 0.3); }
+.severity-low { color: #00ff88; text-shadow: 0 0 10px rgba(0, 255, 136, 0.3); }
+.severity-info { color: #00f0ff; text-shadow: 0 0 10px rgba(0, 240, 255, 0.3); }
+
+/* React Flow controls override for dark theme */
+.react-flow__controls-button {
+  background: #111827 !important;
+  border: 1px solid #1e293b !important;
+  border-bottom: none !important;
+  fill: #94a3b8 !important;
+  width: 28px !important;
+  height: 28px !important;
+}
+.react-flow__controls-button:hover {
+  background: #1e293b !important;
+  fill: #00f0ff !important;
+}
+.react-flow__controls-button:first-child {
+  border-radius: 4px 4px 0 0 !important;
+}
+.react-flow__controls-button:last-child {
+  border-bottom: 1px solid #1e293b !important;
+  border-radius: 0 0 4px 4px !important;
+}
+.react-flow__controls-button svg {
+  fill: #94a3b8 !important;
+}
+.react-flow__controls-button:hover svg {
+  fill: #00f0ff !important;
+}
