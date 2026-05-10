@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+﻿import { BrowserWindow } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -34,8 +34,9 @@ function parseNaabuJSON(raw: string): { host: string; port: number }[] {
   for (const line of lines) {
     try {
       const obj = JSON.parse(line)
-      if (obj.host && obj.port) {
-        results.push({ host: obj.host, port: Number(obj.port) })
+      const host = obj.host || obj.ip || ''
+      if (host && obj.port) {
+        results.push({ host, port: Number(obj.port) })
       }
     } catch { /* skip */ }
   }
@@ -294,6 +295,49 @@ function handleNucleiResult(win: BrowserWindow, scanId: string, line: string): b
   } catch {
     return false
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 0: Host discovery — nmap ping sweep
+// ---------------------------------------------------------------------------
+function runHostDiscovery(
+  win: BrowserWindow, scanId: string, target: string
+): Promise<string[]> {
+  return new Promise((resolve) => {
+    const binPath = getBinaryPath('nmap')
+    const outputPath = tempFile('hostdiscovery', 'xml')
+    const args = ['-sn', target, '-oX', outputPath, '-T5']
+
+    safeSend(win, 'scan:stdout', { scanId, line: `[*] 主机发现: nmap -sn ${target}` })
+
+    const child = spawn(binPath, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    const aliveHosts: string[] = []
+
+    child.stdout!.on('data', (chunk: Buffer) => {
+      const text = chunk.toString()
+      const lines = text.split(/\r?\n/).filter(Boolean)
+      for (const line of lines) {
+        if (line.trim()) safeSend(win, 'scan:stdout', { scanId, line })
+        const ipMatch = line.match(/Nmap scan report for (\d+\.\d+\.\d+\.\d+)/)
+        if (ipMatch) {
+          aliveHosts.push(ipMatch[1])
+          safeSend(win, 'scan:stdout', { scanId, line: `[+] 存活: ${ipMatch[1]}` })
+        }
+      }
+    })
+
+    child.stderr!.on('data', (chunk: Buffer) => {
+      chunk.toString().split(/\r?\n/).filter(Boolean).forEach(l =>
+        safeSend(win, 'scan:stderr', { scanId, line: l }))
+    })
+
+    child.on('close', () => {
+      activeProcesses.delete(scanId)
+      try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath) } catch { /* */ }
+      resolve(aliveHosts)
+    })
+    child.on('error', () => resolve([]))
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -619,26 +663,37 @@ export function startScan(
 
   ;(async () => {
     try {
-    // Phase 1: naabu — port discovery
+    // Phase 1: Host discovery — nmap ping sweep
     scanPhases.set(scanId, 'naabu')
-    safeSend(win, 'scan:progress', { scanId, progress: 5, phase: 'naabu' })
-    safeSend(win, 'scan:stdout', { scanId, line: `[*] 阶段1: Naabu 端口发现 — ${target}` })
+    safeSend(win, 'scan:progress', { scanId, progress: 3, phase: 'naabu' })
+    safeSend(win, 'scan:stdout', { scanId, line: `[*] 阶段1: 主机发现 (Ping Sweep) — ${target}` })
 
-    const naabuResults = await runNaabuPhase(win, scanId, target, portRange)
+    const aliveHosts = await runHostDiscovery(win, scanId, target)
     if (cancelledScans.has(scanId)) { finalizeCancelled(win, scanId); return }
 
-    // Phase 2: nmap — service/version detection
+    if (aliveHosts.length === 0) {
+      safeSend(win, 'scan:stdout', { scanId, line: `[*] 未发现存活主机，扫描结束。` })
+      scanPhases.delete(scanId); updateScanStatus(scanId, 'completed', new Date().toISOString())
+      safeSend(win, 'scan:progress', { scanId, progress: 100, phase: 'naabu' })
+      safeSend(win, 'scan:complete', { scanId, code: 0 }); return
+    }
+    safeSend(win, 'scan:stdout', { scanId, line: `[*] 发现 ${aliveHosts.length} 台存活主机，开始端口扫描...` })
+
+    // Phase 2: naabu — port scan only alive hosts
+    safeSend(win, 'scan:progress', { scanId, progress: 5, phase: 'naabu' })
+    const naabuResults = await runNaabuPhase(win, scanId, aliveHosts.join(','), portRange)
+    if (cancelledScans.has(scanId)) { finalizeCancelled(win, scanId); return }
+
     if (naabuResults.length === 0) {
-      safeSend(win, 'scan:stdout', { scanId, line: `[*] Naabu 未发现开放端口，跳过后续阶段。` })
-      scanPhases.delete(scanId)
-      updateScanStatus(scanId, 'completed', new Date().toISOString())
-      safeSend(win, 'scan:progress', { scanId, progress: 100, phase: 'nmap' })
-      safeSend(win, 'scan:complete', { scanId, code: 0 })
-      return
+      safeSend(win, 'scan:stdout', { scanId, line: `[*] 存活主机未发现开放端口。` })
+      scanPhases.delete(scanId); updateScanStatus(scanId, 'completed', new Date().toISOString())
+      safeSend(win, 'scan:progress', { scanId, progress: 100, phase: 'naabu' })
+      safeSend(win, 'scan:complete', { scanId, code: 0 }); return
     }
 
+    // Phase 3: nmap — service/version detection
     safeSend(win, 'scan:progress', { scanId, progress: 20, phase: 'nmap' })
-    safeSend(win, 'scan:stdout', { scanId, line: `[*] 阶段2: Nmap 服务版本检测` })
+    safeSend(win, 'scan:stdout', { scanId, line: `[*] 阶段3: Nmap 服务版本检测 (${naabuResults.length} 个端口)` })
 
     const { hosts } = await runNmapPhase(win, scanId, naabuResults)
     if (cancelledScans.has(scanId)) { finalizeCancelled(win, scanId); return }
@@ -646,16 +701,15 @@ export function startScan(
     const { webUrls, hostCount } = handleNmapResults(win, scanId, hosts, sentIps)
 
     safeSend(win, 'scan:stdout', {
-      scanId,
-      line: `[*] 阶段2 完成: ${hosts.length} 个主机, ${hostCount} 个服务, ${webUrls.length} 个 Web URL`
+      scanId, line: `[*] 阶段3 完成: ${hosts.length} 个主机, ${hostCount} 个服务, ${webUrls.length} 个 Web URL`
     })
     safeSend(win, 'scan:progress', { scanId, progress: 70, phase: 'nmap' })
 
-    // Phase 3: httpx — web probing + fingerprint
+    // Phase 4: httpx — web probing + fingerprint
     let allTechs: string[] = []
     if (webUrls.length > 0) {
       safeSend(win, 'scan:progress', { scanId, progress: 75, phase: 'httpx' })
-      safeSend(win, 'scan:stdout', { scanId, line: `[*] 阶段3: httpx Web 指纹识别` })
+      safeSend(win, 'scan:stdout', { scanId, line: `[*] 阶段4: httpx Web 指纹识别` })
 
       const httpxResults = await runHttpxPhase(win, scanId, webUrls)
       if (cancelledScans.has(scanId)) { finalizeCancelled(win, scanId); return }
@@ -676,7 +730,7 @@ export function startScan(
       safeSend(win, 'scan:progress', { scanId, progress: 96, phase: 'nuclei' })
       safeSend(win, 'scan:stdout', {
         scanId,
-        line: `[*] 阶段4: Nuclei 漏洞扫描 (${allTechs.length > 0 ? '已过滤模板' : '全部模板'})`
+        line: `[*] 阶段5: Nuclei 漏洞扫描 (${allTechs.length > 0 ? '已过滤模板' : '全部模板'})`
       })
 
       await runNucleiPhase(win, scanId, webUrls, allTechs)

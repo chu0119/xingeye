@@ -16,10 +16,10 @@ function getTerminalLineColor(line: string): string {
 }
 
 const PHASE_LABELS: Record<ScanPhase, string> = {
-  naabu: '阶段1: 端口发现',
-  nmap: '阶段2: 服务识别',
-  httpx: '阶段3: Web 指纹',
-  nuclei: '阶段4: 漏洞扫描',
+  naabu: '阶段2: 端口扫描',
+  nmap: '阶段3: 服务识别',
+  httpx: '阶段4: Web 指纹',
+  nuclei: '阶段5: 漏洞扫描',
   pipeline: '初始化中',
   cancelled: '已取消'
 }
@@ -179,11 +179,11 @@ const ScanResult: React.FC = () => {
     const unsubStdout = window.electronAPI.onScanStdout((data) => {
       if (data.scanId !== scanId) return
       addTerminalLine(scanId, data.line, 'stdout')
-      if (data.line.includes('阶段4') || data.line.includes('Nuclei')) {
+      if (data.line.includes('阶段5') || data.line.includes('Nuclei')) {
         updateSession(scanId, { phase: 'nuclei' })
-      } else if (data.line.includes('阶段3') || data.line.includes('httpx') || data.line.includes('指纹')) {
+      } else if (data.line.includes('阶段4') || data.line.includes('httpx') || data.line.includes('指纹')) {
         updateSession(scanId, { phase: 'httpx' })
-      } else if (data.line.includes('阶段2') || data.line.includes('Nmap')) {
+      } else if (data.line.includes('阶段3') || data.line.includes('Nmap')) {
         updateSession(scanId, { phase: 'nmap' })
       }
     })
