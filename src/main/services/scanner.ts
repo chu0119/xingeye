@@ -298,36 +298,37 @@ function handleNucleiResult(win: BrowserWindow, scanId: string, line: string): b
 }
 
 // ---------------------------------------------------------------------------
-// Phase 0: Host discovery — nmap ping sweep
+// Phase 1: Host discovery — naabu ping sweep (Go-based, handles CIDR natively)
 // ---------------------------------------------------------------------------
 function runHostDiscovery(
   win: BrowserWindow, scanId: string, target: string
 ): Promise<string[]> {
   return new Promise((resolve) => {
-    const binPath = getBinaryPath('nmap')
-    const outputPath = tempFile('hostdiscovery', 'xml')
-    const args = ['-sn', target, '-oX', outputPath, '-T5']
+    const binPath = getBinaryPath('naabu')
+    const outputPath = tempFile('hostdiscovery', 'json')
+    const args = ['-host', target.trim(), '-host-discovery', '-json', '-silent', '-o', outputPath]
 
-    safeSend(win, 'scan:stdout', { scanId, line: `[*] 主机发现: nmap -sn ${target}` })
+    safeSend(win, 'scan:stdout', { scanId, line: `[*] 主机发现: naabu -host-discovery ${target.trim()}` })
 
     const child = spawn(binPath, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    activeProcesses.set(scanId, child)
     const aliveHosts: string[] = []
+    const seen = new Set<string>()
 
     child.stdout!.on('data', (chunk: Buffer) => {
-      const text = chunk.toString()
-      const lines = text.split(/\r?\n/).filter(Boolean)
+      const lines = chunk.toString().split(/\r?\n/).filter(Boolean)
       for (const line of lines) {
-        if (line.trim()) safeSend(win, 'scan:stdout', { scanId, line })
-        const ipMatch = line.match(/Nmap scan report for (\d+\.\d+\.\d+\.\d+)/)
-        if (ipMatch) {
-          aliveHosts.push(ipMatch[1])
-          safeSend(win, 'scan:stdout', { scanId, line: `[+] 存活: ${ipMatch[1]}` })
-          safeSend(win, 'scan:result', {
-            scanId,
-            result: { IP: ipMatch[1], Port: '', Service: 'alive', FingerPrint: '', URL: '' },
-            tool: 'nmap'
-          })
-        }
+        safeSend(win, 'scan:stdout', { scanId, line: `[discover] ${line}` })
+        // Parse JSON output for alive hosts
+        try {
+          const obj = JSON.parse(line)
+          const ip = obj.host || obj.ip || ''
+          if (ip && !seen.has(ip)) {
+            seen.add(ip)
+            aliveHosts.push(ip)
+            safeSend(win, 'scan:stdout', { scanId, line: `[+] 存活: ${ip}` })
+          }
+        } catch { /* not JSON */ }
       }
     })
 
@@ -338,10 +339,27 @@ function runHostDiscovery(
 
     child.on('close', () => {
       activeProcesses.delete(scanId)
-      try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath) } catch { /* */ }
+      // Also parse output file for complete results
+      try {
+        if (fs.existsSync(outputPath)) {
+          const raw = fs.readFileSync(outputPath, 'utf-8')
+          const lines = raw.split(/\r?\n/).filter(Boolean)
+          for (const line of lines) {
+            try {
+              const obj = JSON.parse(line)
+              const ip = obj.host || obj.ip || ''
+              if (ip && !seen.has(ip)) {
+                seen.add(ip)
+                aliveHosts.push(ip)
+              }
+            } catch { /* */ }
+          }
+          try { fs.unlinkSync(outputPath) } catch { /* */ }
+        }
+      } catch { /* */ }
       resolve(aliveHosts)
     })
-    child.on('error', () => resolve([]))
+    child.on('error', () => resolve(aliveHosts))
   })
 }
 

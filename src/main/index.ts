@@ -34,10 +34,20 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  // Fix: ensure window gets focus on startup (frameless windows need explicit focus)
+  // Fix: frameless windows on Windows need explicit focus handling
   mainWindow.once('ready-to-show', () => {
+    mainWindow?.show()
     mainWindow?.focus()
     mainWindow?.webContents.focus()
+  })
+  mainWindow.webContents.once('did-finish-load', () => {
+    // Second focus attempt after page loads — ensures input fields are interactive
+    setTimeout(() => {
+      mainWindow?.webContents.focus()
+      if (mainWindow?.isFocused()) return
+      mainWindow?.focus()
+      mainWindow?.webContents.focus()
+    }, 200)
   })
 
   // Enable right-click context menu for copy/paste

@@ -8,5 +8,15 @@
 <body class="bg-[#0a0a0f] text-gray-100 overflow-hidden">
   <div id="root"></div>
   <script type="module" src="./main.tsx"></script>
+  <script>
+    // Fix: frameless window focus issues on Windows
+    function focusWindow() {
+      if (window.electronAPI && window.electronAPI.focusWindow) {
+        window.electronAPI.focusWindow()
+      }
+    }
+    document.addEventListener('mousedown', focusWindow)
+    window.addEventListener('load', () => setTimeout(focusWindow, 100))
+  </script>
 </body>
 </html>

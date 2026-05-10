@@ -79,6 +79,11 @@ export function registerScanIPC(mainWindow: BrowserWindow): void {
     mainWindow.close()
   })
 
+  ipcMain.handle('window:focus', async () => {
+    mainWindow.focus()
+    mainWindow.webContents.focus()
+  })
+
   // Database management
   ipcMain.handle('db:clearDatabase', async () => {
     clearDatabase()

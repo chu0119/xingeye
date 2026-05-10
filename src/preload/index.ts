@@ -53,6 +53,9 @@ const electronAPI = {
   close: (): void => {
     ipcRenderer.invoke('window:close')
   },
+  focusWindow: (): void => {
+    ipcRenderer.invoke('window:focus')
+  },
 
   // Database queries
   getScans: (): Promise<any[]> => ipcRenderer.invoke('db:getScans'),

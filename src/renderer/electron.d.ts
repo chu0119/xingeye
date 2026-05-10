@@ -13,6 +13,7 @@ declare global {
       minimize(): void
       maximize(): void
       close(): void
+      focusWindow(): void
       getScans(): Promise<any[]>
       getScanById(id: string): Promise<any>
       getHostsByScanId(scanId: string): Promise<any[]>
