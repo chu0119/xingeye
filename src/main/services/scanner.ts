@@ -446,9 +446,8 @@ function runNmapPhase(
     const args = [
       '-iL', targetPath, '-p', allPorts,
       '-n', '-sV', '-sC',
-      '--script', 'vuln,auth,brute,exploit,http-vuln-*,smb-vuln-*,rdp-vuln-*',
-      '-oX', outputPath, '--open', '-T4',
-      '--script-args', 'brute.firstonly=1,unpwdb.timelimit=30m'
+      '--script', 'http-vuln-*,smb-vuln-*,ssl-*,vuln',
+      '-oX', outputPath, '--open', '-T4', '--host-timeout', '3m'
     ]
 
     safeSend(win, 'scan:stdout', {
@@ -492,7 +491,8 @@ function runNmapPhase(
     const nmapHeartbeat = setInterval(() => {
       const elapsed = Math.floor((Date.now() - nmapStart) / 1000)
       safeSend(win, 'scan:progress', { scanId, progress: Math.min(65, 20 + elapsed * 0.3), phase: 'nmap' })
-    }, 5000)
+      safeSend(win, 'scan:stdout', { scanId, line: `[*] Nmap 运行中... (${elapsed}s)` })
+    }, 15000)
 
     child.on('close', () => {
       clearInterval(nmapHeartbeat)
